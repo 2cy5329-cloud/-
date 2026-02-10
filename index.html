@@ -45,8 +45,31 @@
             font-weight: bold;
             font-size: 13pt;
         }
-        .excel-table td { background-color: white; }
-        .merged-cell { font-size: 18pt !important; font-weight: bold; }
+        .excel-table td {
+            background-color: #ffffff;
+            font-weight: 600;
+        }
+        .excel-table tbody tr:nth-child(odd):not(.print-empty-row) td {
+            background-color: #f7f9fc;
+        }
+        .excel-table tbody tr:nth-child(even):not(.print-empty-row) td {
+            background-color: #eef3f9;
+        }
+        .excel-table tbody tr td.bg-excel-blue {
+            background-color: #d5deea !important;
+        }
+        .excel-table tbody tr td.bg-excel-light {
+            background-color: #e8eef7 !important;
+        }
+        .excel-table tbody tr td.print-empty-cell {
+            background-color: #f4f6fa !important;
+        }
+        .merged-cell {
+            font-size: 18pt !important;
+            font-weight: 900;
+            background-color: #e3eaf4 !important;
+            letter-spacing: 0.3px;
+        }
         .excel-title {
             font-size: 28pt;
             font-weight: 900;
@@ -59,7 +82,7 @@
         .excel-date { font-size: 12pt; font-weight: bold; text-align: right; margin-bottom: 5px; }
         .excel-footer { margin-top: 15px; font-size: 12pt; font-weight: bold; line-height: 1.6; color: black; }
         .bg-excel-blue { background-color: #dce6f1 !important; }
-        .bg-excel-light { background-color: #f3f6fb !important; }
+        .bg-excel-light { background-color: #eef3f9 !important; }
         .toast { display: none; position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%); background-color: rgba(30, 41, 59, 0.95); color: white; padding: 12px 24px; border-radius: 8px; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-size: 0.95rem; animation: fadeInOut 0.8s ease-in-out forwards; }
         @keyframes fadeInOut { 0% { opacity: 0; transform: translate(-50%, 20px); } 10% { opacity: 1; transform: translate(-50%, 0); } 90% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -20px); } }
         .shortcut-badge { display: inline-block; background-color: #e2e8f0; color: #475569; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 4px; vertical-align: middle; border: 1px solid #cbd5e1; }
@@ -276,7 +299,7 @@
             else { const now = new Date(); const dayList = ['일', '월', '화', '수', '목', '금', '토']; const reportDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}.(${dayList[now.getDay()]})`; document.getElementById('print-date-header').innerText = `<${reportDate} 단위:원>`; }
             let net = localDataStore.todayNetAmount; let card = localDataStore.cardPayment; if(isViewMode && selectedHistoryDate) { net = selectedHistoryDate.amount ?? 0; card = selectedHistoryDate.card ?? 0; }
             reportMachines.forEach((id, idx) => {
-                if (id === null) { rowsHtml += `<tr style="height: 50pt;"><td></td><td></td><td></td><td class="bg-excel-light"></td></tr>`; return; }
+                if (id === null) { rowsHtml += `<tr class="print-empty-row" style="height: 50pt;"><td class="print-empty-cell"></td><td class="print-empty-cell"></td><td class="print-empty-cell"></td><td class="bg-excel-light print-empty-cell"></td></tr>`; return; }
                 let aVal = 0, bVal = 0;
                 if (isViewMode && selectedHistoryDate) { const mData = (selectedHistoryDate.machines && selectedHistoryDate.machines[id]) ? selectedHistoryDate.machines[id] : null; if(mData) { aVal = mData.issued_amount || 0; bVal = mData.defective_amount || 0; } }
                 else { aVal = parseCurrency(document.getElementById(`machine${id}_issued_amount`)?.value); bVal = parseCurrency(document.getElementById(`machine${id}_defective_amount`)?.value); }
