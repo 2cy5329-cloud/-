@@ -61,7 +61,9 @@ class ScanMonitorFinal:
         self.setup_ui()
         self.create_tray()
 
-        self.root.protocol("WM_DELETE_WINDOW", self.hide_window)
+        # X 버튼은 종료, 최소화는 트레이 처리
+        self.root.protocol("WM_DELETE_WINDOW", self.on_close)
+        self.root.bind("<Unmap>", self.on_window_unmap)
 
         self.poll_status()
         self.root.mainloop()
@@ -109,9 +111,14 @@ class ScanMonitorFinal:
             row = tk.Frame(self.root)
             row.pack(fill="x")
 
-            name_lbl = tk.Label(row, text=name, width=10, anchor="w", font=f_small, cursor="hand2")
+            name_lbl = tk.Label(
+                row, text=name, width=10, anchor="w", font=f_small, cursor="hand2"
+            )
             name_lbl.grid(row=0, column=0)
-            name_lbl.bind("<Double-Button-1>", lambda _e, target_ip=ip: self.edit_receiver_name(target_ip))
+            name_lbl.bind(
+                "<Double-Button-1>",
+                lambda _e, target_ip=ip: self.edit_receiver_name(target_ip),
+            )
 
             st_lbl = tk.Label(row, text="-", width=8, font=f_small)
             st_lbl.grid(row=0, column=1)
@@ -124,11 +131,18 @@ class ScanMonitorFinal:
             off_lbl = tk.Label(row, text=off_val, width=8, font=f_small, fg="red")
             off_lbl.grid(row=0, column=3)
 
-            self.labels[ip] = {"name": name_lbl, "st": st_lbl, "on": on_lbl, "off": off_lbl}
+            self.labels[ip] = {
+                "name": name_lbl,
+                "st": st_lbl,
+                "on": on_lbl,
+                "off": off_lbl,
+            }
 
     def edit_receiver_name(self, ip: str) -> None:
         current_name = next((name for name, target_ip in self.receivers if target_ip == ip), "")
-        new_name = simpledialog.askstring("수신처 이름 변경", f"{ip} 이름", initialvalue=current_name, parent=self.root)
+        new_name = simpledialog.askstring(
+            "수신처 이름 변경", f"{ip} 이름", initialvalue=current_name, parent=self.root
+        )
 
         if new_name is None:
             return
@@ -137,7 +151,10 @@ class ScanMonitorFinal:
         if not new_name:
             return
 
-        self.receivers = [(new_name, target_ip) if target_ip == ip else (name, target_ip) for name, target_ip in self.receivers]
+        self.receivers = [
+            (new_name, target_ip) if target_ip == ip else (name, target_ip)
+            for name, target_ip in self.receivers
+        ]
         self.labels[ip]["name"].config(text=new_name)
         self.save_receivers()
 
@@ -209,12 +226,31 @@ class ScanMonitorFinal:
 
         self.root.after(60_000, self.poll_status)
 
+    def on_window_unmap(self, _event=None) -> None:
+        if self.root.state() == "iconic":
+            self.root.after(0, self.hide_window)
+
     def hide_window(self) -> None:
         self.root.withdraw()
 
     def show_window(self, icon=None, item=None) -> None:
+        self.root.after(0, self._show_window_main_thread)
+
+    def _show_window_main_thread(self) -> None:
         self.root.deiconify()
+        self.root.state("normal")
         self.root.lift()
+        self.root.focus_force()
+
+    def on_close(self, icon=None, item=None) -> None:
+        self.root.after(0, self._close_main_thread)
+
+    def _close_main_thread(self) -> None:
+        try:
+            self.icon.stop()
+        except Exception:
+            pass
+        self.root.destroy()
 
     def create_tray(self) -> None:
         img = Image.new("RGB", (64, 64), (240, 240, 240))
@@ -223,7 +259,7 @@ class ScanMonitorFinal:
 
         menu = pystray.Menu(
             pystray.MenuItem("열기", self.show_window, default=True),
-            pystray.MenuItem("종료", lambda: os._exit(0)),
+            pystray.MenuItem("종료", self.on_close),
         )
         self.icon = pystray.Icon("ScanMonitor", img, "Scan Monitor", menu)
         self.icon.run_detached()
