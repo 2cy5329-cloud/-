@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>인증기 통합 관리 및 결산 시스템</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; overflow-x: hidden; }
+        .report-font, .excel-table, .excel-title, .excel-date, .excel-footer {
+            font-family: 'Malgun Gothic', '맑은 고딕', 'Dotum', '돋움', sans-serif !important;
+        }
+        input::-webkit-outer-spin-button,
+        input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        @media print {
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { background: white; padding: 0; margin: 0; }
+            header, footer, nav, .no-print, button, .shortcut-badge, aside, section:last-of-type, #toast, #view-mode-banner { display: none !important; }
+            .page-content { display: none !important; }
+            #page-2.active { display: block !important; position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 9999; background: white; }
+            @page { size: A4 portrait; margin: 10mm; }
+            .print-area { border: none !important; box-shadow: none !important; padding: 0 !important; margin: 0 !important; width: 100% !important; }
+        }
+        .excel-table {
+            border-collapse: collapse;
+            width: 100%;
+            border: 2px solid black;
+            color: black;
+            table-layout: fixed;
+        }
+        .excel-table th, .excel-table td {
+            border: 1px solid black;
+            padding: 5px;
+            text-align: center;
+            vertical-align: middle;
+            font-size: 14pt;
+            height: 45pt;
+            word-break: keep-all;
+        }
+        .excel-table th {
+            background-color: #e6e6e6 !important;
+            font-weight: bold;
+            font-size: 13pt;
+        }
+        .excel-table td {
+            background-color: #ffffff;
+            font-weight: 500;
+        }
+        .excel-table tbody tr td.bg-excel-blue {
+            background-color: #f0f0f0 !important;
+        }
+        .excel-table tbody tr td.bg-excel-light {
+            background-color: #f7f7f7 !important;
+        }
+        .excel-table tbody tr td.print-empty-cell {
+            background-color: #ffffff !important;
+        }
+        .merged-cell {
+            font-size: 18pt !important;
+            font-weight: 900;
+            background-color: #ffffff !important;
+            border: 2px solid #222 !important;
+            letter-spacing: 0.3px;
+        }
+        .excel-title {
+            font-size: 28pt;
+            font-weight: 900;
+            text-decoration: underline;
+            text-underline-offset: 8px;
+            margin-bottom: 30px;
+            text-align: center;
+            letter-spacing: -1px;
+        }
+        .excel-date { font-size: 12pt; font-weight: bold; text-align: right; margin-bottom: 5px; }
+        .excel-footer { margin-top: 15px; font-size: 12pt; font-weight: bold; line-height: 1.6; color: black; }
+        .bg-excel-blue { background-color: #f0f0f0 !important; }
+        .bg-excel-light { background-color: #f7f7f7 !important; }
+        .excel-table td.bg-excel-light,
+        .excel-table td.bg-excel-blue { font-weight: 700; }
+        .toast { display: none; position: fixed; bottom: 120px; left: 50%; transform: translateX(-50%); background-color: rgba(30, 41, 59, 0.95); color: white; padding: 12px 24px; border-radius: 8px; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1); font-size: 0.95rem; animation: fadeInOut 0.8s ease-in-out forwards; }
+        @keyframes fadeInOut { 0% { opacity: 0; transform: translate(-50%, 20px); } 10% { opacity: 1; transform: translate(-50%, 0); } 90% { opacity: 1; transform: translate(-50%, 0); } 100% { opacity: 0; transform: translate(-50%, -20px); } }
+        .shortcut-badge { display: inline-block; background-color: #e2e8f0; color: #475569; font-size: 0.7rem; padding: 2px 6px; border-radius: 4px; font-weight: 600; margin-left: 4px; vertical-align: middle; border: 1px solid #cbd5e1; }
+        .mode-transition { transition: all 0.2s ease; }
+        body.copy-mode { background-color: #f0fdf4; }
+        body.copy-mode input { background-color: #eef2ff; color: #64748b; border-color: #cbd5e1; pointer-events: none; }
+        body.copy-mode .mode-indicator { background-color: #16a34a; }
+        .copy-mode-only { display: none; }
+        body.copy-mode .copy-mode-only { display: inline-block; }
+        body.view-mode input { background-color: #f3f4f6; color: #475569; pointer-events: none; }
+        .page-content { display: none; }
+        .page-content.active { display: block; animation: fadeIn 0.3s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .nav-btn.active { background-color: #3b82f6; color: white; border-color: #3b82f6; }
+        .resol-box { background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin-bottom: 20px; font-family: 'Malgun Gothic', monospace; font-size: 1.1rem; color: #334155; line-height: 1.8; box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05); }
+        .history-item { cursor: pointer; transition: all 0.2s; }
+        .history-item:hover { background-color: #f1f5f9; }
+        .history-item.selected { background-color: #eff6ff; border-left: 4px solid #3b82f6; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col pb-64 mode-transition" id="main-body">
+    <div id="view-mode-banner" class="hidden sticky top-0 z-[60] bg-yellow-100 border-b border-yellow-300 text-yellow-800 px-4 py-3 shadow-md flex justify-between items-center no-print">
+        <div class="flex items-center gap-2 font-bold">
+            <i class="fas fa-history text-xl"></i>
+            <span>현재 <span id="view-date-label" class="underline">YYYY-MM-DD</span> 일자의 과거 기록을 조회 중입니다. (수정 불가)</span>
+        </div>
+        <button onclick="exitViewMode()" class="bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-1.5 rounded-lg font-bold shadow-sm text-sm transition">
+            <i class="fas fa-undo"></i> 현재(오늘) 입력 화면으로 돌아가기
+        </button>
+    </div>
+
+    <header class="bg-slate-800 text-white p-4 shadow-lg sticky top-0 z-50 mode-indicator transition-colors duration-300 border-b border-slate-700 no-print" id="main-header">
+        <div class="max-w-[1800px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-6">
+                <div class="flex flex-col">
+                    <h1 class="text-xl font-bold flex items-center gap-2" id="header-title">
+                        <i class="fas fa-edit text-blue-400"></i> 입력 모드
+                    </h1>
+                    <div id="current-date-display" class="text-xs font-medium text-slate-400 mt-0.5"></div>
+                </div>
+                <nav class="flex bg-slate-900 rounded-lg p-1 border border-slate-700 ml-4">
+                    <button onclick="showPage(1)" id="nav-1" class="nav-btn active px-4 py-1.5 rounded-md text-sm font-bold transition-all flex items-center gap-2 text-white"><i class="fas fa-calculator"></i> 집계 관리</button>
+                    <button onclick="showPage(2)" id="nav-2" class="nav-btn px-4 py-1.5 rounded-md text-sm font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2"><i class="fas fa-print"></i> 결산 보고서</button>
+                    <button onclick="showPage(3)" id="nav-3" class="nav-btn px-4 py-1.5 rounded-md text-sm font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2"><i class="fas fa-file-invoice-dollar"></i> 일일 징수결의</button>
+                    <button onclick="showPage(4)" id="nav-4" class="nav-btn px-4 py-1.5 rounded-md text-sm font-bold text-slate-400 hover:text-white transition-all flex items-center gap-2"><i class="fas fa-credit-card"></i> 주간 카드결제</button>
+                </nav>
+            </div>
+            <div id="header-controls" class="flex flex-wrap gap-4 items-center">
+                <div class="flex items-center bg-slate-900 p-2 rounded-xl border border-slate-600 shadow-inner">
+                    <label class="text-[10px] text-slate-400 font-black px-2 uppercase tracking-tighter">카드결제(B)</label>
+                    <input type="text" id="card_payment_amount" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field bg-slate-800 border border-slate-600 rounded px-2 py-1 text-right w-36 focus:outline-none focus:border-blue-400 text-blue-300 font-bold" placeholder="0">
+                </div>
+                <div class="flex items-center bg-slate-700 p-2 rounded-xl bg-opacity-50 border border-slate-600">
+                    <div class="flex items-center gap-3 px-2">
+                        <label class="text-xs text-slate-300 font-bold">1. 전일 누적</label>
+                        <input type="text" id="prev_total_amount" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field bg-slate-600 border border-slate-500 rounded-lg px-3 py-1 text-right w-44 focus:outline-none focus:border-yellow-400 text-yellow-300 font-bold text-lg" placeholder="0">
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="saveDailyClosing()" class="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition shadow-md flex items-center gap-2"><i class="fas fa-save text-xs"></i> 일일 마감 (저장)</button>
+                    <button onclick="prepareNextDay()" class="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold transition shadow-md flex items-center gap-2"><i class="fas fa-trash-alt text-xs"></i> 익일 준비 (초기화)</button>
+                    <div class="w-px h-8 bg-slate-600 mx-1"></div>
+                    <button onclick="toggleMode()" id="mode-btn" class="bg-green-500 hover:bg-green-600 text-white px-6 py-2.5 rounded-lg text-base font-bold shadow-lg transition flex items-center gap-2"><i class="fas fa-check"></i> 입력 완료</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div id="page-1" class="page-content active no-print">
+        <main class="p-4 md:p-6">
+            <div class="max-w-[1800px] mx-auto space-y-8">
+                <div id="copy-mode-alert" class="hidden bg-green-50 border-2 border-green-200 text-green-800 p-4 rounded-xl flex justify-between items-center animate-pulse">
+                    <div class="flex items-center gap-4"><i class="fas fa-keyboard text-2xl"></i><span class="text-lg"><b>복사 대기 모드 활성화:</b> 숫자 키 <b>1 ~ 8</b>을 눌러 필요한 값을 즉시 복사하세요.</span></div>
+                    <button onclick="toggleMode()" class="bg-white border border-green-300 px-4 py-2 rounded-lg font-bold">수정 (ESC)</button>
+                </div>
+                <div id="machine-cards" class="grid grid-cols-1 md:grid-cols-3 gap-8"></div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 pb-20">
+                    <section class="lg:col-span-2 bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden flex flex-col h-[300px]">
+                        <div class="bg-slate-50 px-6 py-4 border-b flex items-center justify-between shrink-0">
+                            <h3 class="font-bold text-slate-700 flex items-center gap-2 text-sm uppercase tracking-wider"><i class="fas fa-history text-indigo-500"></i> 전체 히스토리 (클릭하여 불러오기)</h3>
+                            <button onclick="clearHistory()" class="text-[11px] text-slate-400 hover:text-red-500 font-black transition px-2">내역 삭제</button>
+                        </div>
+                        <div id="history-list" class="flex-grow overflow-y-auto p-2 space-y-1"></div>
+                    </section>
+                    <section class="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 flex flex-col justify-center space-y-4 h-[300px]">
+                        <h3 class="font-bold text-slate-400 text-xs uppercase tracking-widest flex items-center gap-2"><i class="fas fa-shield-alt"></i> 데이터 복구 센터</h3>
+                        <p class="text-[11px] text-slate-500 leading-tight">인터넷 기록 삭제 시 데이터 복구용 파일입니다.<br>'마감' 시 자동 저장된 파일을 불러오세요.</p>
+                        <label class="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold py-4 rounded-xl border-2 border-indigo-200 flex flex-col items-center justify-center gap-1 cursor-pointer transition text-center shadow-sm">
+                            <span class="flex items-center gap-2"><i class="fas fa-file-upload text-xl"></i> 백업 파일 불러오기</span>
+                            <span class="text-[10px] font-normal text-indigo-400">(.json 파일 선택)</span>
+                            <input type="file" id="import-file" class="hidden" accept=".json" onchange="importFullBackup(event)">
+                        </label>
+                        <button onclick="exportFullBackup()" class="w-full bg-white hover:bg-slate-50 text-slate-600 text-xs font-bold py-3 rounded-lg border border-slate-300 flex items-center justify-center gap-2 transition"><i class="fas fa-download"></i> 현재 상태 수동 백업</button>
+                    </section>
+                </div>
+            </div>
+        </main>
+        <footer class="fixed bottom-0 left-0 right-0 bg-white border-t-4 border-slate-200 shadow-[0_-10px_30px_rgba(0,0,0,0.15)] z-30 transition-all duration-300 no-print">
+            <div class="max-w-[1800px] mx-auto flex flex-col md:flex-row items-stretch">
+                <div class="flex-grow p-4 grid grid-cols-3 gap-6">
+                    <div class="bg-blue-50 p-3 rounded-xl border-2 border-blue-100"><div class="font-black text-blue-800 mb-2 text-xs uppercase tracking-wider">2. 금일발행(a) 합계</div><div class="flex justify-between items-center py-1"><span class="text-slate-500 text-xs font-bold">매수 <span class="shortcut-badge key-hint">2</span></span><span class="font-mono font-black text-blue-900 text-lg" id="res_today_issued_count">0</span></div><div class="flex justify-between items-center py-1"><span class="text-slate-500 text-xs font-bold">금액 <span class="shortcut-badge key-hint">3</span></span><span class="font-mono font-black text-blue-900 text-xl" id="res_today_issued_amount">0</span></div></div>
+                    <div class="bg-red-50 p-3 rounded-xl border-2 border-red-100"><div class="font-black text-red-800 mb-2 text-xs uppercase tracking-wider">3. 금일결손(b) 합계</div><div class="flex justify-between items-center py-1"><span class="text-slate-500 text-xs font-bold">매수 <span class="shortcut-badge key-hint">4</span></span><span class="font-mono font-black text-red-900 text-lg" id="res_today_defective_count">0</span></div><div class="flex justify-between items-center py-1"><span class="text-slate-500 text-xs font-bold">금액 <span class="shortcut-badge key-hint">5</span></span><span class="font-mono font-black text-red-900 text-xl" id="res_today_defective_amount">0</span></div></div>
+                    <div class="bg-slate-800 p-3 rounded-xl border-2 border-slate-700 shadow-inner"><div class="font-black text-slate-300 mb-2 text-xs uppercase tracking-wider">4. 수입금액(A) = (a-b)계</div><div class="flex justify-between items-center py-1"><span class="text-slate-400 text-xs font-bold">매수 <span class="shortcut-badge key-hint">6</span></span><span class="font-mono font-black text-white text-lg" id="res_today_net_count">0</span></div><div class="flex justify-between items-center py-1"><span class="text-slate-400 text-xs font-bold">금액 <span class="shortcut-badge key-hint">7</span></span><span class="font-mono font-black text-yellow-400 text-2xl" id="res_today_net_amount">0</span></div></div>
+                </div>
+                <div class="bg-slate-900 text-white p-6 md:w-96 flex flex-col justify-center space-y-4"><div class="group cursor-default"><div class="text-xs text-slate-500 font-bold mb-1 flex justify-between uppercase tracking-tighter"><span>8. 최종 합계 (전일+금일)</span><span class="shortcut-badge key-hint text-white bg-slate-700 border-slate-600">8</span></div><div class="text-4xl font-black font-mono text-yellow-400 text-right tabular-nums" id="res_grand_total">0</div></div><button onclick="copyToClipboard()" class="w-full bg-indigo-500 hover:bg-indigo-400 text-white font-black py-3 rounded-xl transition-all flex items-center justify-center gap-3 text-sm shadow-lg"><i class="fas fa-copy text-lg"></i> 전체 보고서 복사 (F2)</button></div>
+            </div>
+        </footer>
+    </div>
+
+    <div id="page-2" class="page-content report-font"><main class="p-4 flex flex-col items-center"><div class="no-print mb-6 w-full max-w-[800pt] flex justify-end"><button onclick="window.print()" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black hover:bg-blue-700 shadow-xl transition flex items-center gap-3"><i class="fas fa-print"></i> 보고서 인쇄하기 (A4)</button></div><div class="w-full max-w-[800pt] bg-white p-[40pt] print-area shadow-2xl"><div class="text-center mb-[30pt]"><h1 class="excel-title">제증명 수수료 결산내역</h1><div class="date-container"><div class="excel-date" id="print-date-header"></div></div></div><table class="excel-table"><thead><tr><th rowspan="2" class="w-[10%]">인증기</th><th colspan="3" class="w-[42%]">수입금액 (A)</th><th rowspan="2" class="w-[16%]">합 계</th><th rowspan="2" class="w-[16%]">카드결제 (B)</th><th rowspan="2" class="w-[16%]">현금집계 (C)</th></tr><tr><th>금 액 (a)</th><th>결 손 (b)</th><th>계 (c)</th></tr></thead><tbody id="print-table-body"></tbody></table><div class="excel-footer">※ 인증기용지 수입(현금결제) C = A - B <br>※ 카드결제 수입은 결제 금액 입금되면 세외수입 처리예정</div></div></main></div>
+
+    <div id="page-3" class="page-content"><main class="p-8 flex flex-col items-center justify-center min-h-[60vh]"><div class="max-w-[800px] w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-10 space-y-8"><h2 class="text-2xl font-black text-slate-700 border-b pb-4 flex items-center gap-3"><i class="fas fa-file-signature text-indigo-500"></i> 일일 징수결의 텍스트 생성</h2><div class="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-blue-700 mb-4"><i class="fas fa-info-circle mr-2"></i> 좌측 히스토리에서 날짜를 클릭하면 해당 날짜의 징수결의 내역을 볼 수 있습니다.</div><div class="space-y-2"><div class="flex justify-between items-center mb-1"><span class="text-sm font-bold text-slate-500 uppercase tracking-wide">1. 제목 (한 줄) <span class="shortcut-badge">Key 1</span></span><button onclick="copyResolutionTitle()" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-bold hover:bg-indigo-100 transition border border-indigo-100 flex items-center gap-1"><i class="fas fa-copy"></i> 복사하기</button></div><div class="resol-box bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-slate-700 font-bold" id="resol-title"></div></div><div class="space-y-2"><div class="flex justify-between items-center mb-1"><span class="text-sm font-bold text-slate-500 uppercase tracking-wide">2. 상세 내역 (세 줄) <span class="shortcut-badge">Key 2</span></span><button onclick="copyResolutionDetail()" class="text-xs bg-green-50 text-green-600 px-3 py-1 rounded-full font-bold hover:bg-green-100 transition border border-green-100 flex items-center gap-1"><i class="fas fa-copy"></i> 복사하기</button></div><div class="resol-box bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-slate-700 leading-loose" id="resol-detail"></div></div></div></main></div>
+
+    <div id="page-4" class="page-content"><main class="p-8 flex flex-col items-center justify-center min-h-[60vh]"><div class="max-w-[800px] w-full bg-white rounded-2xl shadow-xl border border-slate-200 p-10 space-y-8"><h2 class="text-2xl font-black text-slate-700 border-b pb-4 flex items-center gap-3"><i class="fas fa-credit-card text-indigo-500"></i> 주간 카드결제 징수결의 (2주 전 월~금)</h2><div class="bg-orange-50 p-4 rounded-lg border border-orange-100 text-sm text-orange-700 mb-4"><i class="fas fa-info-circle mr-2"></i> 2주 전 데이터를 자동으로 불러옵니다. 데이터가 없으면 직접 입력하세요.</div><div id="weekly-inputs" class="grid grid-cols-5 gap-3 mb-6"></div><div class="space-y-2"><div class="flex justify-between items-center mb-1"><span class="text-sm font-bold text-slate-500 uppercase tracking-wide">1. 제목 (한 줄) <span class="shortcut-badge">Key 1</span></span><button onclick="copyWeeklyTitle()" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded-full font-bold hover:bg-indigo-100 transition border border-indigo-100 flex items-center gap-1"><i class="fas fa-copy"></i> 복사하기</button></div><div class="resol-box bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-slate-700 font-bold" id="weekly-title"></div></div><div class="space-y-2"><div class="flex justify-between items-center mb-1"><span class="text-sm font-bold text-slate-500 uppercase tracking-wide">2. 상세 내역 (5일치) <span class="shortcut-badge">Key 2</span></span><button onclick="copyWeeklyDetail()" class="text-xs bg-green-50 text-green-600 px-3 py-1 rounded-full font-bold hover:bg-green-100 transition border border-green-100 flex items-center gap-1"><i class="fas fa-copy"></i> 복사하기</button></div><div class="resol-box bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-slate-700 leading-loose" id="weekly-detail"></div></div><div class="space-y-2"><div class="flex justify-between items-center mb-1"><span class="text-sm font-bold text-slate-500 uppercase tracking-wide">3. 주간 합계 <span class="shortcut-badge">Key 3</span></span><button onclick="copyWeeklyTotal()" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded-full font-bold hover:bg-blue-100 transition border border-blue-100 flex items-center gap-1"><i class="fas fa-copy"></i> 복사하기</button></div><div class="resol-box bg-slate-50 p-4 rounded-xl border border-slate-200 font-mono text-slate-700 font-bold text-xl" id="weekly-total"></div></div></div></main></div>
+
+    <div id="toast" class="toast"><div class="flex items-center gap-4"><i class="fas fa-check-circle text-green-400 text-2xl"></i><div><div class="font-black text-base" id="toast-title"></div><div class="text-xs text-slate-400 font-bold" id="toast-message"></div></div></div></div>
+
+    <script>
+        const inputMachines = [2, 3, 5];
+        const historyMachines = [1, 2, 3, 5];
+        const fields = ['issued_count', 'issued_amount', 'defective_count', 'defective_amount'];
+        let localDataStore = { todayIssuedCount: 0, todayIssuedAmount: 0, todayDefectiveCount: 0, todayDefectiveAmount: 0, todayNetCount: 0, todayNetAmount: 0, grandTotal: 0, cardPayment: 0 };
+        let localHistory = [];
+        let isCopyMode = false;
+        let isViewMode = false;
+        let selectedHistoryDate = null;
+        let currentPage = 1;
+        let isDataSaved = false;
+
+        const formatNumber = (num) => (num ?? 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        const parseCurrency = (str) => {
+            if (str === undefined || str === null) return 0;
+            const cleaned = str.toString().replace(/,/g, '');
+            return parseInt(cleaned, 10) || 0;
+        };
+        const formatCurrencyInput = (input) => {
+            let value = (input.value ?? '').toString();
+            value = value.replace(/[^0-9]/g, '');
+            input.value = value !== "" ? parseInt(value, 10).toLocaleString() : "";
+            isDataSaved = false;
+        };
+
+        function renderMachineCards() {
+            const container = document.getElementById('machine-cards');
+            const cardsHtml = inputMachines.map(id => {
+                const colorClass = id === 2 ? 'border-blue-500' : id === 3 ? 'border-indigo-500' : 'border-emerald-500';
+                const bgColor = id === 2 ? 'bg-blue-50' : id === 3 ? 'bg-indigo-50' : 'bg-emerald-50';
+                const textColor = id === 2 ? 'text-blue-700' : id === 3 ? 'text-indigo-700' : 'text-emerald-700';
+                return `
+                    <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden border-t-8 ${colorClass} transition-all duration-300 hover:shadow-2xl">
+                        <div class="bg-slate-50 px-6 py-5 border-b flex justify-between items-center">
+                            <h2 class="font-black text-2xl text-slate-800">${id}번 인증기</h2>
+                            <span class="text-xs bg-slate-200 text-slate-600 px-3 py-1 rounded-full font-bold uppercase tracking-widest">ID 0${id}</span>
+                        </div>
+                        <div class="p-8 space-y-8">
+                            <div class="grid grid-cols-2 gap-6">
+                                <div>
+                                    <label class="text-xs font-black text-slate-400 block mb-2 uppercase">발행매수</label>
+                                    <input type="text" id="machine${id}_issued_count" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field w-full p-4 border-2 border-slate-100 rounded-2xl text-right font-mono font-bold text-2xl focus:border-blue-400 outline-none transition-all" placeholder="0">
+                                </div>
+                                <div>
+                                    <label class="text-xs font-black text-red-300 block mb-2 uppercase">결손매수</label>
+                                    <input type="text" id="machine${id}_defective_count" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field w-full p-4 border-2 border-slate-100 rounded-2xl text-right font-mono font-bold text-2xl text-red-500 focus:border-red-400 outline-none transition-all" placeholder="0">
+                                </div>
+                            </div>
+                            <div class="space-y-6 pt-6 border-t-2 border-dashed border-slate-50">
+                                <div>
+                                    <label class="text-xs font-black ${textColor} block mb-2 uppercase tracking-wide">금일 발행금액 (a)</label>
+                                    <input type="text" id="machine${id}_issued_amount" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field w-full p-5 border-2 border-transparent rounded-2xl ${bgColor} text-right font-mono font-bold ${textColor} text-4xl outline-none" placeholder="0">
+                                </div>
+                                <div>
+                                    <label class="text-xs font-black text-red-600 block mb-2 uppercase tracking-wide">금일 결손금액 (b)</label>
+                                    <input type="text" id="machine${id}_defective_amount" onfocus="this.select()" onkeyup="formatCurrencyInput(this); calculateTotal()" class="input-field w-full p-5 border-2 border-transparent rounded-2xl bg-red-50 text-right font-mono font-bold text-red-600 text-4xl outline-none" placeholder="0">
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+            container.innerHTML = cardsHtml;
+        }
+
+        function parseHistorySortValue(item) { if (item && item.fullDate) { const t = Date.parse(item.fullDate); if (!isNaN(t)) return t; } const s = (item && item.date) ? item.date.toString() : ""; const m = s.match(/(\d{4})\.(\d{2})\.(\d{2})/); if (m) return new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10)).getTime(); return 0; }
+        function sortHistory() { localHistory.sort((a, b) => parseHistorySortValue(b) - parseHistorySortValue(a)); }
+
+        function showPage(pageId) { currentPage = pageId; document.querySelectorAll('.page-content').forEach(p => p.classList.remove('active')); document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active', 'text-white')); document.getElementById(`page-${pageId}`).classList.add('active'); document.getElementById(`nav-${pageId}`).classList.add('active'); if(pageId >= 2) { if (isViewMode && selectedHistoryDate) { if (pageId === 2) updatePrintPage(); if (pageId === 3) updateResolutionUI(selectedHistoryDate); } else { if (pageId === 2) updatePrintPage(); if (pageId === 3) updateResolutionUI(); if (pageId === 4) updateWeeklyResolutionUI(); } document.getElementById('header-controls').style.visibility = 'hidden'; } else { document.getElementById('header-controls').style.visibility = 'visible'; } }
+        function updateTodayDate() { const now = new Date(); const year = now.getFullYear(); const month = now.getMonth() + 1; const date = now.getDate(); const dayList = ['일', '월', '화', '수', '목', '금', '토']; const dateStr = `${year}년 ${month}월 ${date}일 (${dayList[now.getDay()]})`; document.getElementById('current-date-display').innerText = dateStr; }
+
+        function loadData() {
+            const p = localStorage.getItem('prev_total_amount'); if(p) document.getElementById('prev_total_amount').value = p;
+            const cp = localStorage.getItem('card_payment_amount'); if(cp) document.getElementById('card_payment_amount').value = cp;
+            historyMachines.forEach(id => { fields.forEach(f => { const v = localStorage.getItem(`machine${id}_${f}`); const el = document.getElementById(`machine${id}_${f}`); if (el && v !== null) el.value = v; }); });
+            const savedHistory = localStorage.getItem('daily_history'); if(savedHistory) { try { localHistory = JSON.parse(savedHistory); } catch(e) { localHistory = []; } sortHistory(); updateHistoryUI(); }
+        }
+
+        function calculateTotal() {
+            if (isViewMode) return;
+            const prev = parseCurrency(document.getElementById('prev_total_amount').value);
+            const card = parseCurrency(document.getElementById('card_payment_amount').value);
+            localStorage.setItem('prev_total_amount', document.getElementById('prev_total_amount').value);
+            localStorage.setItem('card_payment_amount', document.getElementById('card_payment_amount').value);
+            let sic=0, sia=0, sdc=0, sda=0;
+            inputMachines.forEach(id => { fields.forEach(f => { const el = document.getElementById(`machine${id}_${f}`); if(!el) return; const valStr = el.value; const valNum = parseCurrency(valStr); if (f === 'issued_count') sic += valNum; else if (f === 'issued_amount') sia += valNum; else if (f === 'defective_count') sdc += valNum; else if (f === 'defective_amount') sda += valNum; localStorage.setItem(`machine${id}_${f}`, valStr); }); });
+            const tnc = sic - sdc; const tna = sia - sda; const gt = prev + tna;
+            localDataStore = { todayIssuedCount: sic, todayIssuedAmount: sia, todayDefectiveCount: sdc, todayDefectiveAmount: sda, todayNetCount: tnc, todayNetAmount: tna, grandTotal: gt, cardPayment: card };
+            updateSummaryUI();
+        }
+
+        function updateSummaryUI() { document.getElementById('res_today_issued_count').innerText = formatNumber(localDataStore.todayIssuedCount) + '매'; document.getElementById('res_today_issued_amount').innerText = formatNumber(localDataStore.todayIssuedAmount) + '원'; document.getElementById('res_today_defective_count').innerText = formatNumber(localDataStore.todayDefectiveCount) + '매'; document.getElementById('res_today_defective_amount').innerText = formatNumber(localDataStore.todayDefectiveAmount) + '원'; document.getElementById('res_today_net_count').innerText = formatNumber(localDataStore.todayNetCount) + '매'; document.getElementById('res_today_net_amount').innerText = formatNumber(localDataStore.todayNetAmount) + '원'; document.getElementById('res_grand_total').innerText = formatNumber(localDataStore.grandTotal) + '원'; }
+
+        function updatePrintPage() {
+            const tbody = document.getElementById('print-table-body'); let rowsHtml = ''; const reportMachines = [1, 2, 3, null, 5];
+            if (isViewMode && selectedHistoryDate) { document.getElementById('print-date-header').innerText = `<${selectedHistoryDate.date} 단위:원>`; }
+            else { const now = new Date(); const dayList = ['일', '월', '화', '수', '목', '금', '토']; const reportDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2,'0')}.${String(now.getDate()).padStart(2,'0')}.(${dayList[now.getDay()]})`; document.getElementById('print-date-header').innerText = `<${reportDate} 단위:원>`; }
+            let net = localDataStore.todayNetAmount; let card = localDataStore.cardPayment; if(isViewMode && selectedHistoryDate) { net = selectedHistoryDate.amount ?? 0; card = selectedHistoryDate.card ?? 0; }
+            reportMachines.forEach((id, idx) => {
+                if (id === null) { rowsHtml += `<tr class="print-empty-row" style="height: 50pt;"><td class="print-empty-cell"></td><td class="print-empty-cell"></td><td class="print-empty-cell"></td><td class="bg-excel-light print-empty-cell"></td></tr>`; return; }
+                let aVal = 0, bVal = 0;
+                if (isViewMode && selectedHistoryDate) { const mData = (selectedHistoryDate.machines && selectedHistoryDate.machines[id]) ? selectedHistoryDate.machines[id] : null; if(mData) { aVal = mData.issued_amount || 0; bVal = mData.defective_amount || 0; } }
+                else { aVal = parseCurrency(document.getElementById(`machine${id}_issued_amount`)?.value); bVal = parseCurrency(document.getElementById(`machine${id}_defective_amount`)?.value); }
+                const cVal = aVal - bVal; const label = id === 5 ? '⑤' : id === 3 ? '③' : id === 2 ? '②' : '①';
+                rowsHtml += `<tr><td class="bg-excel-blue font-bold">인증기 ${label}</td><td>${formatNumber(aVal)}</td><td>${formatNumber(bVal)}</td><td class="bg-excel-light font-bold">${formatNumber(cVal)}</td>${idx === 0 ? `<td rowspan="5" class="merged-cell">${formatNumber(net)}</td><td rowspan="5" class="merged-cell">${formatNumber(card)}</td><td rowspan="5" class="merged-cell">${formatNumber(net - card)}</td>` : ''}</tr>`;
+            });
+            tbody.innerHTML = rowsHtml;
+        }
+
+        function updateResolutionUI(historyData = null) { let totalRev, cardRev, cashRev, dateStr; if (historyData) { totalRev = historyData.amount ?? 0; cardRev = historyData.card ?? 0; cashRev = totalRev - cardRev; dateStr = historyData.date; } else { const now = new Date(); dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}.`; totalRev = localDataStore.todayNetAmount ?? 0; cardRev = localDataStore.cardPayment ?? 0; cashRev = totalRev - cardRev; } document.getElementById('resol-title').innerText = `${dateStr}일자 인증기용 증지수입`; document.getElementById('resol-detail').innerHTML = `${dateStr}일자 인증기 증지수입=금${formatNumber(totalRev)}원<br>${dateStr}일자 카드결제수입=금${formatNumber(cardRev)}원<br>${dateStr}일자 현금결제수입=금${formatNumber(cashRev)}원`; }
+
+        function getTargetWeekRange() {
+            const today = new Date(); const dayOfWeek = today.getDay();
+            const daysToTargetMonday = (dayOfWeek === 0 ? 6 : dayOfWeek - 1) + 14;
+            const monday = new Date(today); monday.setDate(today.getDate() - daysToTargetMonday);
+            const friday = new Date(monday); friday.setDate(monday.getDate() + 4);
+            return { monday, friday };
+        }
+
+        function updateWeeklyResolutionUI() {
+            const { monday: targetMonday, friday: targetFriday } = getTargetWeekRange();
+            const monStr = `${targetMonday.getFullYear()}.${String(targetMonday.getMonth() + 1).padStart(2, '0')}.${String(targetMonday.getDate()).padStart(2, '0')}`;
+            const friStr = `${targetFriday.getFullYear()}.${String(targetFriday.getMonth() + 1).padStart(2, '0')}.${String(targetFriday.getDate()).padStart(2, '0')}`;
+            document.getElementById('weekly-title').innerText = `${monStr}~${friStr}.일자 인증기용 증지수입(카드결제수입)`;
+
+            const inputsContainer = document.getElementById('weekly-inputs');
+            const existingInputs = inputsContainer.querySelectorAll('input');
+            const valueByDate = new Map(Array.from(existingInputs).map(inp => [inp.getAttribute('data-date'), inp.value]));
+
+            let inputHtml = '';
+            for (let i = 0; i < 5; i++) {
+                const currentDate = new Date(targetMonday); currentDate.setDate(targetMonday.getDate() + i);
+                const searchDateStr = `${currentDate.getFullYear()}.${String(currentDate.getMonth() + 1).padStart(2, '0')}.${String(currentDate.getDate()).padStart(2, '0')}.`;
+                let amount = parseCurrency(valueByDate.get(searchDateStr) || '');
+                if (!valueByDate.has(searchDateStr)) { const historyItem = localHistory.find(h => h.date === searchDateStr); if (historyItem) amount = historyItem.card || 0; }
+                const dayName = ['월', '화', '수', '목', '금'][i];
+                inputHtml += `<div class="flex flex-col"><label class="text-xs font-bold text-slate-500 mb-1">${searchDateStr} (${dayName})</label><input type="text" class="w-full p-2 border border-slate-300 rounded text-right font-mono weekly-input" value="${amount > 0 ? formatNumber(amount) : ''}" placeholder="0" oninput="formatCurrencyInput(this); generateWeeklyText()" data-date="${searchDateStr}"></div>`;
+            }
+
+            inputsContainer.innerHTML = inputHtml;
+            generateWeeklyText();
+        }
+
+        function generateWeeklyText() { const inputs = document.querySelectorAll('#weekly-inputs input'); let detailHtml = ''; let totalAmount = 0; inputs.forEach(input => { const date = input.getAttribute('data-date'); const val = parseCurrency(input.value); totalAmount += val; let amountStr = `금${formatNumber(val)}원`; if (val === 0) amountStr += "(공휴일)"; detailHtml += `${date}일자 카드결제수입=${amountStr}<br>`; }); document.getElementById('weekly-detail').innerHTML = detailHtml; document.getElementById('weekly-total').innerText = `금${formatNumber(totalAmount)}원`; }
+
+        function copyWeeklyTitle() { const text = document.getElementById('weekly-title').innerText; navigator.clipboard.writeText(text).then(() => showToast("주간 제목 복사", "클립보드에 복사되었습니다.")); }
+        function copyWeeklyDetail() { const cleanText = document.getElementById('weekly-detail').innerText; navigator.clipboard.writeText(cleanText).then(() => showToast("주간 내역 복사", "5일치 내역이 복사되었습니다.")); }
+        function copyWeeklyTotal() { const text = document.getElementById('weekly-total').innerText.replace(/[^0-9,]/g, ''); navigator.clipboard.writeText(text).then(() => showToast("주간 합계 복사", "합계 금액(숫자)이 복사되었습니다.")); }
+
+        function updateHistoryUI() { const list = document.getElementById('history-list'); if (localHistory.length === 0) { list.innerHTML = '<div class="p-10 text-center text-slate-300 italic">저장된 데이터가 없습니다.</div>'; return; } list.innerHTML = localHistory.map((item, idx) => `<div id="hist-item-${idx}" onclick="enterViewMode(${idx})" class="history-item p-3 border-b border-slate-100 flex justify-between items-center group"><div><div class="text-xs font-bold text-slate-500 mb-0.5 group-hover:text-indigo-600 transition-colors">${item.date}</div><div class="text-[10px] text-slate-400">카드: ${formatNumber(item.card ?? 0)} / 순수익: ${formatNumber(item.amount ?? 0)}</div></div><div class="text-right font-mono font-bold text-indigo-600 text-sm">총합: ${formatNumber(item.grandTotal ?? 0)}</div></div>`).join(''); }
+
+        function enterViewMode(index) { isViewMode = true; selectedHistoryDate = localHistory[index]; document.getElementById('view-mode-banner').classList.remove('hidden'); document.getElementById('view-date-label').innerText = selectedHistoryDate.date; document.body.classList.add('view-mode'); const items = document.querySelectorAll('.history-item'); items.forEach(el => el.classList.remove('selected')); document.getElementById(`hist-item-${index}`).classList.add('selected'); const restoredPrev = (selectedHistoryDate.grandTotal ?? 0) - (selectedHistoryDate.amount ?? 0); document.getElementById('prev_total_amount').value = formatNumber(restoredPrev); document.getElementById('card_payment_amount').value = formatNumber(selectedHistoryDate.card ?? 0); if (selectedHistoryDate.machines) { Object.keys(selectedHistoryDate.machines).forEach(id => { const mData = selectedHistoryDate.machines[id]; const iEl = document.getElementById(`machine${id}_issued_count`); if(iEl) iEl.value = formatNumber(mData.issued_count || 0); const iaEl = document.getElementById(`machine${id}_issued_amount`); if(iaEl) iaEl.value = formatNumber(mData.issued_amount || 0); const dEl = document.getElementById(`machine${id}_defective_count`); if(dEl) dEl.value = formatNumber(mData.defective_count || 0); const daEl = document.getElementById(`machine${id}_defective_amount`); if(daEl) daEl.value = formatNumber(mData.defective_amount || 0); }); }
+            let h_sic = 0, h_sia = 0, h_sdc = 0, h_sda = 0;
+            if (selectedHistoryDate.machines) { Object.keys(selectedHistoryDate.machines).forEach(id => { const mData = selectedHistoryDate.machines[id]; h_sic += mData.issued_count || 0; h_sia += mData.issued_amount || 0; h_sdc += mData.defective_count || 0; h_sda += mData.defective_amount || 0; }); }
+            localDataStore = { todayIssuedCount: h_sic, todayIssuedAmount: h_sia, todayDefectiveCount: h_sdc, todayDefectiveAmount: h_sda, todayNetCount: h_sic - h_sdc, todayNetAmount: selectedHistoryDate.amount ?? 0, grandTotal: selectedHistoryDate.grandTotal ?? 0, cardPayment: selectedHistoryDate.card ?? 0 };
+            updateSummaryUI(); if (currentPage === 2) updatePrintPage(); if (currentPage === 3) updateResolutionUI(selectedHistoryDate); showToast("과거 조회 모드", "데이터를 수정할 수 없습니다."); }
+
+        function exitViewMode() { isViewMode = false; selectedHistoryDate = null; document.getElementById('view-mode-banner').classList.add('hidden'); document.body.classList.remove('view-mode'); const items = document.querySelectorAll('.history-item'); items.forEach(el => el.classList.remove('selected')); loadData(); calculateTotal(); showToast("복귀 완료", "현재 입력 모드로 돌아왔습니다."); }
+        function saveDailyClosing() { const currentGT = localDataStore.grandTotal; const currentNet = localDataStore.todayNetAmount; const currentCard = localDataStore.cardPayment; if(confirm(`[일일 마감]\n데이터를 히스토리에 저장하고 백업 파일을 다운로드합니다.\n현재 입력된 수치는 유지됩니다.`)) { if (isViewMode) { alert("과거 조회 모드에서는 저장할 수 없습니다."); return; } const now = new Date(); const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}.`; const machineData = {}; historyMachines.forEach(id => { machineData[id] = { issued_count: parseCurrency(document.getElementById(`machine${id}_issued_count`)?.value), issued_amount: parseCurrency(document.getElementById(`machine${id}_issued_amount`)?.value), defective_count: parseCurrency(document.getElementById(`machine${id}_defective_count`)?.value), defective_amount: parseCurrency(document.getElementById(`machine${id}_defective_amount`)?.value) }; }); const historyItem = { date: dateStr, fullDate: now.toISOString(), amount: currentNet, card: currentCard, grandTotal: currentGT, machines: machineData }; const existingIndex = localHistory.findIndex(item => item.date === dateStr); if (existingIndex > -1) { localHistory[existingIndex] = historyItem; } else { localHistory.unshift(historyItem); } sortHistory(); localStorage.setItem('daily_history', JSON.stringify(localHistory)); isDataSaved = true; exportFullBackup(); updateHistoryUI(); showToast("마감 저장 완료", "히스토리 저장 및 백업 파일 생성됨."); } }
+
+        function prepareNextDay() { if (!isDataSaved && localDataStore.todayIssuedCount > 0) { if (!confirm("⚠️ 오늘 데이터가 아직 저장되지 않은 것 같습니다!\n\n그래도 초기화하고 다음 날을 준비하시겠습니까?")) { return; } } const currentGT = localDataStore.grandTotal; if(confirm(`[익일 준비]\n오늘의 최종 합계(${formatNumber(currentGT)}원)를 '전일 누적'으로 넘기고,\n모든 입력 칸을 초기화하시겠습니까?`)) { if (isViewMode) { alert("과거 조회 모드입니다."); return; } document.getElementById('prev_total_amount').value = formatNumber(currentGT); localStorage.setItem('prev_total_amount', formatNumber(currentGT)); inputMachines.forEach(id => { fields.forEach(f => { const el = document.getElementById(`machine${id}_${f}`); if(el) el.value = ''; localStorage.removeItem(`machine${id}_${f}`); }); }); document.getElementById('card_payment_amount').value = ''; localStorage.removeItem('card_payment_amount'); isDataSaved = false; calculateTotal(); showToast("초기화 완료", "내일 업무 준비가 되었습니다."); } }
+
+        function clearHistory() { if(confirm('모든 히스토리 내역을 영구 삭제하시겠습니까?')) { localHistory = []; localStorage.setItem('daily_history', JSON.stringify([])); updateHistoryUI(); if(isViewMode) exitViewMode(); showToast("삭제 완료", "초기화되었습니다."); } }
+
+        function exportFullBackup() { const backupData = { version: "1.1", prev_total_amount: document.getElementById('prev_total_amount').value, current_input: { machines: {}, card: document.getElementById('card_payment_amount').value }, history: localHistory }; historyMachines.forEach(id => { backupData.current_input.machines[id] = {}; fields.forEach(f => { backupData.current_input.machines[id][f] = document.getElementById(`machine${id}_${f}`)?.value ?? ""; }); }); const jsonStr = JSON.stringify(backupData, null, 2); const blob = new Blob([jsonStr], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; const today = new Date(); const dateStr = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, '0')}${String(today.getDate()).padStart(2, '0')}`; a.download = `인증기_통합백업_${dateStr}.json`; a.click(); URL.revokeObjectURL(url); }
+
+        function importFullBackup(event) { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = function(e) { try { let data; const result = e.target.result; if (result && result.charCodeAt(0) === 0xFEFF) { data = JSON.parse(result.slice(1)); } else { data = JSON.parse(result); } if (data.prev_total_amount !== undefined) { document.getElementById('prev_total_amount').value = data.prev_total_amount; localStorage.setItem('prev_total_amount', data.prev_total_amount); } let currentData = data.current_input; if (!currentData && data.machines) { currentData = { machines: data.machines, card: data.card_payment }; } if (currentData) { if (currentData.card !== undefined) { document.getElementById('card_payment_amount').value = currentData.card; localStorage.setItem('card_payment_amount', currentData.card); } if (currentData.machines) { Object.keys(currentData.machines).forEach(id => { const mData = currentData.machines[id]; if (mData) { fields.forEach(f => { if (mData[f] !== undefined) { const el = document.getElementById(`machine${id}_${f}`); if (el) { el.value = mData[f]; localStorage.setItem(`machine${id}_${f}`, mData[f]); } else { localStorage.setItem(`machine${id}_${f}`, mData[f]); } } }); } }); } } if (data.history) { localHistory = data.history; sortHistory(); localStorage.setItem('daily_history', JSON.stringify(localHistory)); updateHistoryUI(); } calculateTotal(); showToast("복구 성공", "데이터가 정상적으로 복원되었습니다."); } catch (err) { console.error(err); alert("파일 형식이 올바르지 않거나 손상되었습니다.\n" + err.message); } event.target.value = ''; }; reader.readAsText(file); }
+
+        function toggleMode() { isCopyMode = !isCopyMode; const btn = document.getElementById('mode-btn'); const alertBox = document.getElementById('copy-mode-alert'); const headerTitle = document.getElementById('header-title'); if (isCopyMode) { document.body.classList.add('copy-mode'); btn.innerHTML = '<i class="fas fa-pen text-sm"></i> 수정 (ESC)'; alertBox.classList.remove('hidden'); headerTitle.innerHTML = '<i class="fas fa-copy text-green-500"></i> 복사 모드'; document.activeElement.blur(); } else { document.body.classList.remove('copy-mode'); btn.innerHTML = '<i class="fas fa-check"></i> 입력 완료'; alertBox.classList.add('hidden'); headerTitle.innerHTML = '<i class="fas fa-edit text-blue-400"></i> 입력 모드'; } }
+
+        function handleShortcuts(event) { if (event.key === 'Enter' && !isCopyMode) { if (document.activeElement.tagName === 'INPUT') { event.preventDefault(); const inputs = Array.from(document.querySelectorAll('input:not([type="file"])')); const currentIndex = inputs.indexOf(document.activeElement); if (event.shiftKey) { if (currentIndex > 0) inputs[currentIndex - 1].focus(); } else { if (currentIndex < inputs.length - 1) inputs[currentIndex + 1].focus(); else if (currentIndex === inputs.length - 1) { if(confirm("모든 입력이 끝났습니까? '입력 완료' 모드로 전환할까요?")) toggleMode(); } } return; } toggleMode(); return; } if (event.key === 'F2') { event.preventDefault(); copyToClipboard(); return; } if (isCopyMode && event.key === 'Escape') { toggleMode(); return; } if (document.activeElement.tagName === 'INPUT' && !event.altKey && !event.ctrlKey) return; if (currentPage === 1) { if (isCopyMode || (event.altKey && !event.ctrlKey)) { if (['1', '2', '3', '4', '5', '6', '7', '8'].includes(event.key)) { event.preventDefault(); triggerCopyByKey(event.key); } } } if (currentPage === 3) { if (event.key === '1') { event.preventDefault(); copyResolutionTitle(); } if (event.key === '2') { event.preventDefault(); copyResolutionDetail(); } } if (currentPage === 4) { if (event.key === '1') { event.preventDefault(); copyWeeklyTitle(); } if (event.key === '2') { event.preventDefault(); copyWeeklyDetail(); } if (event.key === '3') { event.preventDefault(); copyWeeklyTotal(); } } }
+
+        function triggerCopyByKey(key) { let val = ""; let label = ""; const prev = document.getElementById('prev_total_amount').value; const sic = document.getElementById('res_today_issued_count').innerText.replace('매',''); const sia = document.getElementById('res_today_issued_amount').innerText.replace('원',''); const sdc = document.getElementById('res_today_defective_count').innerText.replace('매',''); const sda = document.getElementById('res_today_defective_amount').innerText.replace('원',''); const tnc = document.getElementById('res_today_net_count').innerText.replace('매',''); const tna = document.getElementById('res_today_net_amount').innerText.replace('원',''); const gt = document.getElementById('res_grand_total').innerText.replace('원',''); switch(key) { case '1': val = prev; label = "전일 누적"; break; case '2': val = sic; label = "발행 매수"; break; case '3': val = sia; label = "발행 금액"; break; case '4': val = sdc; label = "결손 매수"; break; case '5': val = sda; label = "결손 금액"; break; case '6': val = tnc; label = "집계 매수"; break; case '7': val = tna; label = "집계 금액"; break; case '8': val = gt; label = "최종 합계"; break; } if (val !== undefined && val !== null) navigator.clipboard.writeText(val).then(() => showToast(label, val)); }
+
+        function copyToClipboard() { const prev = document.getElementById('prev_total_amount').value; const sic = document.getElementById('res_today_issued_count').innerText; const sia = document.getElementById('res_today_issued_amount').innerText; const sdc = document.getElementById('res_today_defective_count').innerText; const sda = document.getElementById('res_today_defective_amount').innerText; const tnc = document.getElementById('res_today_net_count').innerText; const tna = document.getElementById('res_today_net_amount').innerText; const card = formatNumber(localDataStore.cardPayment); const gt = document.getElementById('res_grand_total').innerText; const t = `[집계 보고서]\n1. 전일누적: ${prev}원\n2. 발행계: ${sic} / ${sia}\n3. 결손계: ${sdc} / ${sda}\n4. 수입금액(A): ${tnc} / ${tna}\n5. 카드결제(B): ${card}원\n6. 현금집계(C=A-B): ${formatNumber((localDataStore.todayNetAmount ?? 0) - (localDataStore.cardPayment ?? 0))}원\n--------------------------------\n■ 최종합계: ${gt}`; navigator.clipboard.writeText(t).then(() => showToast("보고서 전체", "복사 완료")); }
+        function copyResolutionTitle() { const text = document.getElementById('resol-title').innerText; navigator.clipboard.writeText(text).then(() => showToast("제목 복사", "클립보드에 복사되었습니다.")); }
+        function copyResolutionDetail() { const cleanText = document.getElementById('resol-detail').innerText; navigator.clipboard.writeText(cleanText).then(() => showToast("내역 복사", "3줄 내역이 복사되었습니다.")); }
+        function showToast(title, msg) { const toast = document.getElementById('toast'); document.getElementById('toast-title').innerText = title; document.getElementById('toast-message').innerText = msg; toast.style.display = 'block'; toast.style.animation = 'none'; toast.offsetHeight; toast.style.animation = 'fadeInOut 0.8s ease-in-out forwards'; setTimeout(() => { toast.style.display = 'none'; }, 800); }
+
+        window.onfocus = updateTodayDate;
+        document.addEventListener('keydown', handleShortcuts);
+        window.onload = () => { renderMachineCards(); updateTodayDate(); loadData(); calculateTotal(); };
+    </script>
+</body>
+</html>
