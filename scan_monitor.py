@@ -21,6 +21,9 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 RECEIVER_CONFIG_PATH = BASE_DIR / "receivers.json"
 
+POLL_INTERVAL_MS = 90_000
+OFFLINE_FAILURE_THRESHOLD = 2
+
 DEFAULT_RECEIVERS = [
     ("주민자치", "109.3.124.39"),
     ("총무", "109.3.124.17"),
@@ -56,6 +59,7 @@ class ScanMonitorFinal:
         self.current_log_path = get_today_log_path()
         self.history = self.load_data(self.current_log_path)
         self.last_status = {ip: None for _, ip in self.receivers}
+        self.failure_counts = {ip: 0 for _, ip in self.receivers}
         self.labels: dict[str, dict[str, tk.Label]] = {}
 
         self.setup_ui()
@@ -183,10 +187,12 @@ class ScanMonitorFinal:
             self.current_log_path = today_path
             self.history = self.load_data(today_path)
             self.last_status = {ip: None for _, ip in self.receivers}
+            self.failure_counts = {ip: 0 for _, ip in self.receivers}
 
             for ip, label_set in self.labels.items():
                 label_set["on"].config(text=self.history[ip]["on"])
                 label_set["off"].config(text=self.history[ip]["off"])
+                label_set["st"].config(text="-", fg="#999999")
 
     def check_status(self, ip: str, timeout_s: float = 0.8) -> bool:
         try:
@@ -202,14 +208,25 @@ class ScanMonitorFinal:
         now = datetime.now().strftime("%H:%M")
 
         for _, ip in self.receivers:
-            is_on = self.check_status(ip)
+            connected = self.check_status(ip)
 
-            self.labels[ip]["st"].config(
-                text="Ready" if is_on else "Offline",
-                fg="green" if is_on else "#999999",
-            )
+            if connected:
+                self.failure_counts[ip] = 0
+                is_on = True
+            else:
+                self.failure_counts[ip] += 1
+                is_on = self.failure_counts[ip] < OFFLINE_FAILURE_THRESHOLD
 
-            if is_on and self.history[ip]["on"] == "-":
+            if connected or is_on:
+                state_text = "Ready"
+                state_fg = "green"
+            else:
+                state_text = "Offline"
+                state_fg = "#999999"
+
+            self.labels[ip]["st"].config(text=state_text, fg=state_fg)
+
+            if connected and self.history[ip]["on"] == "-":
                 self.history[ip]["on"] = now
                 self.labels[ip]["on"].config(text=now)
                 changed = True
@@ -224,7 +241,7 @@ class ScanMonitorFinal:
         if changed:
             self.save_data()
 
-        self.root.after(60_000, self.poll_status)
+        self.root.after(POLL_INTERVAL_MS, self.poll_status)
 
     def on_window_unmap(self, _event=None) -> None:
         if self.root.state() == "iconic":
