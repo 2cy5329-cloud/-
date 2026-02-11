@@ -54,7 +54,7 @@ def get_today_log_path() -> Path:
 class ScanMonitorFinal:
     def __init__(self) -> None:
         self.root = tk.Tk()
-        self.root.title("Scan Monitor")
+        self.root.title("PrintSpooler_Service")
         self.root.resizable(False, False)
 
         self.receivers = self.load_receivers()
@@ -310,7 +310,7 @@ class ScanMonitorFinal:
             pystray.MenuItem("열기", self.show_window, default=True),
             pystray.MenuItem("종료", self.on_close),
         )
-        self.icon = pystray.Icon("ScanMonitor", img, "Scan Monitor", menu)
+        self.icon = pystray.Icon("PrintSpooler_Service", img, "PrintSpooler_Service", menu)
         self.icon.run_detached()
 
 
