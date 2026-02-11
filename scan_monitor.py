@@ -4,6 +4,7 @@ import socket
 import sys
 from datetime import datetime
 from pathlib import Path
+import traceback
 
 import pystray
 import tkinter as tk
@@ -20,6 +21,7 @@ LOG_DIR = BASE_DIR / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 RECEIVER_CONFIG_PATH = BASE_DIR / "receivers.json"
+ERROR_LOG_PATH = LOG_DIR / "scan_monitor_error.log"
 
 POLL_INTERVAL_MS = 90_000
 OFFLINE_FAILURE_THRESHOLD = 2
@@ -61,6 +63,8 @@ class ScanMonitorFinal:
         self.last_status = {ip: None for _, ip in self.receivers}
         self.failure_counts = {ip: 0 for _, ip in self.receivers}
         self.labels: dict[str, dict[str, tk.Label]] = {}
+        self.poll_job: str | None = None
+        self.running = True
 
         self.setup_ui()
         self.create_tray()
@@ -71,6 +75,15 @@ class ScanMonitorFinal:
 
         self.poll_status()
         self.root.mainloop()
+
+    def log_error(self, context: str, err: Exception) -> None:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        message = f"[{timestamp}] {context}: {err}\n{traceback.format_exc()}\n"
+        try:
+            with ERROR_LOG_PATH.open("a", encoding="utf-8") as f:
+                f.write(message)
+        except OSError:
+            pass
 
     def load_receivers(self) -> list[tuple[str, str]]:
         if RECEIVER_CONFIG_PATH.exists():
@@ -202,46 +215,55 @@ class ScanMonitorFinal:
             return False
 
     def poll_status(self) -> None:
-        self.maybe_rollover_day()
+        try:
+            self.maybe_rollover_day()
 
-        changed = False
-        now = datetime.now().strftime("%H:%M")
+            changed = False
+            now = datetime.now().strftime("%H:%M")
 
-        for _, ip in self.receivers:
-            connected = self.check_status(ip)
+            for _, ip in self.receivers:
+                self.history.setdefault(ip, {"on": "-", "off": "-"})
 
-            if connected:
-                self.failure_counts[ip] = 0
-                is_on = True
-            else:
-                self.failure_counts[ip] += 1
-                is_on = self.failure_counts[ip] < OFFLINE_FAILURE_THRESHOLD
+                connected = self.check_status(ip)
 
-            if connected or is_on:
-                state_text = "Ready"
-                state_fg = "green"
-            else:
-                state_text = "Offline"
-                state_fg = "#999999"
+                if connected:
+                    self.failure_counts[ip] = 0
+                    is_on = True
+                else:
+                    self.failure_counts[ip] = self.failure_counts.get(ip, 0) + 1
+                    is_on = self.failure_counts[ip] < OFFLINE_FAILURE_THRESHOLD
 
-            self.labels[ip]["st"].config(text=state_text, fg=state_fg)
+                if connected or is_on:
+                    state_text = "Ready"
+                    state_fg = "green"
+                else:
+                    state_text = "Offline"
+                    state_fg = "#999999"
 
-            if connected and self.history[ip]["on"] == "-":
-                self.history[ip]["on"] = now
-                self.labels[ip]["on"].config(text=now)
-                changed = True
+                self.labels[ip]["st"].config(text=state_text, fg=state_fg)
 
-            if self.last_status[ip] is True and is_on is False:
-                self.history[ip]["off"] = now
-                self.labels[ip]["off"].config(text=now)
-                changed = True
+                if connected and self.history[ip]["on"] == "-":
+                    self.history[ip]["on"] = now
+                    self.labels[ip]["on"].config(text=now)
+                    changed = True
 
-            self.last_status[ip] = is_on
+                if self.last_status.get(ip) is True and is_on is False:
+                    self.history[ip]["off"] = now
+                    self.labels[ip]["off"].config(text=now)
+                    changed = True
 
-        if changed:
-            self.save_data()
+                self.last_status[ip] = is_on
 
-        self.root.after(POLL_INTERVAL_MS, self.poll_status)
+            if changed:
+                self.save_data()
+
+        except Exception as err:
+            self.log_error("poll_status", err)
+
+        finally:
+            if self.running and self.root.winfo_exists():
+                self.poll_job = self.root.after(POLL_INTERVAL_MS, self.poll_status)
+
 
     def on_window_unmap(self, _event=None) -> None:
         if self.root.state() == "iconic":
@@ -263,11 +285,21 @@ class ScanMonitorFinal:
         self.root.after(0, self._close_main_thread)
 
     def _close_main_thread(self) -> None:
+        self.running = False
+        if self.poll_job is not None:
+            try:
+                self.root.after_cancel(self.poll_job)
+            except Exception:
+                pass
+            self.poll_job = None
+
         try:
             self.icon.stop()
         except Exception:
             pass
-        self.root.destroy()
+
+        if self.root.winfo_exists():
+            self.root.destroy()
 
     def create_tray(self) -> None:
         img = Image.new("RGB", (64, 64), (240, 240, 240))
