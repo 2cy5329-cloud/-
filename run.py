@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+import socket
 import sys
 import threading
 import time
@@ -37,11 +38,28 @@ def main() -> int:
     print("[안내] 종료하려면 Ctrl+C 를 누르세요.", flush=True)
 
     if not args.no_browser:
-        threading.Thread(target=lambda: (time.sleep(0.8), webbrowser.open(url)), daemon=True).start()
+        def open_browser_when_ready() -> None:
+            for _ in range(20):
+                time.sleep(0.2)
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+                    sock.settimeout(0.2)
+                    if sock.connect_ex((args.host, args.port)) != 0:
+                        continue
+                opened = webbrowser.open(url)
+                if opened:
+                    print(f"[안내] 브라우저를 열었습니다: {url}", flush=True)
+                else:
+                    print(f"[안내] 브라우저 자동 열기에 실패했습니다. 직접 접속: {url}", flush=True)
+                return
+
+            print(f"[안내] 브라우저 자동 열기 전에 서버 확인에 실패했습니다. 직접 접속: {url}", flush=True)
+
+        threading.Thread(target=open_browser_when_ready, daemon=True).start()
 
     try:
         with make_server(args.host, args.port, application) as httpd:
             print("[상태] 서버가 정상적으로 실행되었습니다.", flush=True)
+            print("[상태] 이 창은 닫지 말고 켜둔 상태에서 브라우저를 사용하세요.", flush=True)
             httpd.serve_forever()
     except OSError as exc:
         print(f"[오류] 서버 실행 실패: {exc}", flush=True)
