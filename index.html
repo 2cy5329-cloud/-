@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>전입/전출 자동 집계 (단일 HTML)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; max-width: 1100px; }
+    .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    label { display: block; margin: 8px 0; }
+    input, button { padding: 8px; }
+    button { background: #1f6feb; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    table { border-collapse: collapse; width: 100%; margin-top: 8px; }
+    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+    .muted { color: #666; font-size: 13px; }
+    .error { color: #b00020; font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1>전입/전출 자동 집계 (서버 없이 실행)</h1>
+  <p class="muted">이 파일은 웹 UI입니다. <strong>Python 실행 없이</strong> 브라우저에서 바로 열어서 사용하세요.</p>
+
+  <div class="card">
+    <label>기준 지역 <input id="targetRegion" type="text" value="익산" /></label>
+    <label>연령 계산 기준 연도 <input id="referenceYear" type="number" value="2025" /></label>
+    <label>원본 파일 업로드 (.xlsx, .csv) <input id="sourceFile" type="file" accept=".xlsx,.csv" /></label>
+    <button id="runBtn">자동 집계 실행</button>
+    <p class="muted">필수 컬럼: 이름, 생년월일, 이전주소, 새주소, 이동구분(전입/전출)</p>
+    <p id="message"></p>
+  </div>
+
+  <div id="result"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script>
+    const messageEl = document.getElementById('message');
+    const resultEl = document.getElementById('result');
+
+    function cityOf(address) {
+      const raw = String(address || '').trim();
+      return raw ? raw.split(/\s+/)[0] : '미상';
+    }
+
+    function parseBirthYear(value) {
+      const s = String(value || '').trim();
+      const m = s.match(/(19\d{2}|20\d{2})/);
+      return m ? Number(m[1]) : null;
+    }
+
+    function ageBucket(age) {
+      if (age == null || Number.isNaN(age)) return '기타';
+      if (age <= 17) return '17세 이하';
+      if (age <= 19) return '18~19세';
+      if (age <= 24) return '20~24세';
+      if (age <= 29) return '25~29세';
+      if (age <= 34) return '30~34세';
+      if (age <= 39) return '35~39세';
+      if (age <= 49) return '40대';
+      if (age <= 59) return '50대';
+      return '60세 이상';
+    }
+
+    function toTable(title, rows) {
+      if (!rows.length) return `<h3>${title}</h3><p>데이터 없음</p>`;
+      const headers = Object.keys(rows[0]);
+      const th = headers.map(h => `<th>${h}</th>`).join('');
+      const body = rows.map(r => `<tr>${headers.map(h => `<td>${r[h] ?? ''}</td>`).join('')}</tr>`).join('');
+      return `<h3>${title}</h3><table><thead><tr>${th}</tr></thead><tbody>${body}</tbody></table>`;
+    }
+
+    function requireColumns(rows) {
+      if (!rows.length) throw new Error('행 데이터가 없습니다.');
+      const cols = Object.keys(rows[0]).map(c => c.trim());
+      const required = ['이름', '생년월일', '이전주소', '새주소', '이동구분'];
+      const missing = required.filter(r => !cols.includes(r));
+      if (missing.length) throw new Error(`필수 컬럼 누락: ${missing.join(', ')}`);
+    }
+
+    function summarize(rows, targetRegion, referenceYear) {
+      let inbound = 0;
+      let outbound = 0;
+      const flowMap = new Map();
+      const ageMap = new Map();
+
+      for (const row of rows) {
+        const kind = String(row['이동구분'] || '').trim();
+        const prevAddr = String(row['이전주소'] || '').trim();
+        const newAddr = String(row['새주소'] || '').trim();
+        const fromCity = cityOf(prevAddr);
+        const toCity = cityOf(newAddr);
+
+        const key = `${fromCity}→${toCity}`;
+        flowMap.set(key, (flowMap.get(key) || 0) + 1);
+
+        const birthYear = parseBirthYear(row['생년월일']);
+        const age = birthYear ? (referenceYear - birthYear) : null;
+        const bucket = ageBucket(age);
+        if (!ageMap.has(bucket)) ageMap.set(bucket, { '연령대': bucket, '전입': 0, '전출': 0 });
+
+        if (kind.includes('전입') && newAddr.includes(targetRegion)) {
+          inbound += 1;
+          ageMap.get(bucket)['전입'] += 1;
+        }
+        if (kind.includes('전출') && prevAddr.includes(targetRegion)) {
+          outbound += 1;
+          ageMap.get(bucket)['전출'] += 1;
+        }
+      }
+
+      const flowRows = [...flowMap.entries()]
+        .map(([k, v]) => {
+          const [from, to] = k.split('→');
+          return { '이전지역': from, '새지역': to, '건수': v };
+        })
+        .sort((a, b) => b['건수'] - a['건수']);
+
+      const ageOrder = ['17세 이하','18~19세','20~24세','25~29세','30~34세','35~39세','40대','50대','60세 이상','기타'];
+      const ageRows = ageOrder.filter(k => ageMap.has(k)).map(k => ageMap.get(k));
+
+      return {
+        summaryRows: [
+          { '지표': '전체건수', '값': rows.length },
+          { '지표': `${targetRegion} 전입`, '값': inbound },
+          { '지표': `${targetRegion} 전출`, '값': outbound },
+          { '지표': '순증감', '값': inbound - outbound }
+        ],
+        flowRows,
+        ageRows,
+      };
+    }
+
+    async function run() {
+      try {
+        messageEl.className = '';
+        messageEl.textContent = '파일을 읽는 중입니다...';
+        resultEl.innerHTML = '';
+
+        const file = document.getElementById('sourceFile').files[0];
+        const targetRegion = (document.getElementById('targetRegion').value || '익산').trim();
+        const referenceYear = Number(document.getElementById('referenceYear').value || '2025');
+
+        if (!file) throw new Error('파일을 선택해주세요.');
+
+        const data = await file.arrayBuffer();
+        const workbook = XLSX.read(data, { type: 'array' });
+        const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
+
+        requireColumns(rows);
+        const result = summarize(rows, targetRegion, referenceYear);
+
+        resultEl.innerHTML = [
+          toTable('요약', result.summaryRows),
+          toTable('이전지역 → 새지역 흐름', result.flowRows),
+          toTable('연령대별 전입/전출', result.ageRows),
+        ].join('');
+
+        messageEl.textContent = `완료: ${rows.length}건 처리`;        
+      } catch (err) {
+        messageEl.className = 'error';
+        messageEl.textContent = `오류: ${err.message}`;
+      }
+    }
+
+    document.getElementById('runBtn').addEventListener('click', run);
+  </script>
+</body>
+</html>
