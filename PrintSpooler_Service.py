@@ -256,7 +256,7 @@ class ScanMonitorFinal:
                     self.first_failure_at[ip] = None
                     is_on = True
                     status_text = "Ready"
-                    status_fg = "green"
+                    status_fg = "#007a00"
                 else:
                     if self.first_failure_at[ip] is None:
                         self.first_failure_at[ip] = now_dt
@@ -267,7 +267,7 @@ class ScanMonitorFinal:
 
                     if within_grace:
                         status_text = "Failing"
-                        status_fg = "#d9831f"
+                        status_fg = "#d60000"
                     else:
                         status_text = "Offline"
                         status_fg = "#999999"
