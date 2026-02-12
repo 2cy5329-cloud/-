@@ -10,7 +10,7 @@ from threading import Thread
 import pystray
 import tkinter as tk
 from PIL import Image, ImageDraw
-from tkinter import simpledialog
+from tkinter import messagebox, simpledialog
 
 
 if getattr(sys, "frozen", False):
@@ -73,6 +73,9 @@ class ScanMonitorFinal:
 
         self.setup_ui()
         self.create_tray()
+
+        # 시작 시 트레이 상태로 실행
+        self.root.withdraw()
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("<Unmap>", self.on_window_unmap)
@@ -307,7 +310,17 @@ class ScanMonitorFinal:
         self.root.lift()
 
     def on_close(self, icon=None, item=None) -> None:
-        self.root.after(0, self._close_main_thread)
+        self.root.after(0, self._confirm_and_close_main_thread)
+
+    def _confirm_and_close_main_thread(self) -> None:
+        if not self.running or not self.root.winfo_exists():
+            return
+
+        should_close = messagebox.askyesno(
+            "종료 확인", "종료하시겠습니까?"
+        )
+        if should_close:
+            self._close_main_thread()
 
     def _close_main_thread(self) -> None:
         self.running = False
