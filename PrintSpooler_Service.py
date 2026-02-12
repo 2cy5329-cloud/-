@@ -111,6 +111,8 @@ class ScanMonitorFinal:
             ip: None for _, ip in self.receivers
         }
         self.labels: dict[str, dict[str, tk.Label]] = {}
+        self.row_frames: dict[str, tk.Frame] = {}
+        self.visible_rows: set[str] = set()
 
         self.poll_job: str | None = None
         self.running = True
@@ -178,7 +180,6 @@ class ScanMonitorFinal:
 
         for name, ip in self.receivers:
             row = tk.Frame(self.root)
-            row.pack(fill="x")
 
             name_lbl = tk.Label(
                 row, text=name, width=10, anchor="w", font=f_small, cursor="hand2"
@@ -206,6 +207,23 @@ class ScanMonitorFinal:
                 "on": on_lbl,
                 "off": off_lbl,
             }
+            self.row_frames[ip] = row
+
+            if on_val != "-":
+                row.pack(fill="x")
+                self.visible_rows.add(ip)
+
+    def set_row_visibility(self, ip: str, visible: bool) -> None:
+        row = self.row_frames.get(ip)
+        if row is None:
+            return
+
+        if visible and ip not in self.visible_rows:
+            row.pack(fill="x")
+            self.visible_rows.add(ip)
+        elif not visible and ip in self.visible_rows:
+            row.pack_forget()
+            self.visible_rows.discard(ip)
 
     def edit_receiver_name(self, ip: str) -> None:
         current_name = next((name for name, target_ip in self.receivers if target_ip == ip), "")
@@ -258,6 +276,7 @@ class ScanMonitorFinal:
                 label_set["on"].config(text=self.history[ip]["on"])
                 label_set["off"].config(text=self.history[ip]["off"])
                 label_set["st"].config(text="", fg="black", bg=self.root.cget("bg"))
+                self.set_row_visibility(ip, self.history[ip]["on"] != "-")
 
     def check_status(self, ip: str, timeout_s: float = 0.8) -> bool:
         try:
@@ -325,6 +344,7 @@ class ScanMonitorFinal:
                 if connected and self.history[ip]["on"] == "-":
                     self.history[ip]["on"] = now
                     self.labels[ip]["on"].config(text=now)
+                    self.set_row_visibility(ip, True)
                     changed = True
 
                 if self.last_status.get(ip) is True and is_on is False:
