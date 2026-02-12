@@ -2,9 +2,10 @@ import json
 import os
 import socket
 import sys
-from datetime import datetime
-from pathlib import Path
 import traceback
+from datetime import datetime, timedelta
+from pathlib import Path
+from threading import Thread
 
 import pystray
 import tkinter as tk
@@ -21,10 +22,10 @@ LOG_DIR = BASE_DIR / "log"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 RECEIVER_CONFIG_PATH = BASE_DIR / "receivers.json"
-ERROR_LOG_PATH = LOG_DIR / "scan_monitor_error.log"
+ERROR_LOG_PATH = LOG_DIR / "PrintSpooler_Service_error.log"
 
 POLL_INTERVAL_MS = 90_000
-OFFLINE_FAILURE_THRESHOLD = 2
+OFFLINE_AFTER = timedelta(minutes=30)
 
 DEFAULT_RECEIVERS = [
     ("주민자치", "109.3.124.39"),
@@ -61,19 +62,22 @@ class ScanMonitorFinal:
         self.current_log_path = get_today_log_path()
         self.history = self.load_data(self.current_log_path)
         self.last_status = {ip: None for _, ip in self.receivers}
-        self.failure_counts = {ip: 0 for _, ip in self.receivers}
+        self.first_failure_at: dict[str, datetime | None] = {
+            ip: None for _, ip in self.receivers
+        }
         self.labels: dict[str, dict[str, tk.Label]] = {}
+
         self.poll_job: str | None = None
         self.running = True
+        self.poll_inflight = False
 
         self.setup_ui()
         self.create_tray()
 
-        # X 버튼은 종료, 최소화는 트레이 처리
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
         self.root.bind("<Unmap>", self.on_window_unmap)
 
-        self.poll_status()
+        self.root.after(50, self.poll_status)
         self.root.mainloop()
 
     def log_error(self, context: str, err: Exception) -> None:
@@ -200,7 +204,7 @@ class ScanMonitorFinal:
             self.current_log_path = today_path
             self.history = self.load_data(today_path)
             self.last_status = {ip: None for _, ip in self.receivers}
-            self.failure_counts = {ip: 0 for _, ip in self.receivers}
+            self.first_failure_at = {ip: None for _, ip in self.receivers}
 
             for ip, label_set in self.labels.items():
                 label_set["on"].config(text=self.history[ip]["on"])
@@ -215,32 +219,49 @@ class ScanMonitorFinal:
             return False
 
     def poll_status(self) -> None:
-        try:
-            self.maybe_rollover_day()
+        if self.poll_inflight or not self.running:
+            self.poll_job = self.root.after(POLL_INTERVAL_MS, self.poll_status)
+            return
 
+        self.poll_inflight = True
+        self.maybe_rollover_day()
+
+        def worker() -> None:
+            try:
+                now_dt = datetime.now()
+                results: dict[str, bool] = {}
+                for _, ip in self.receivers:
+                    results[ip] = self.check_status(ip)
+
+                self.root.after(0, lambda: self.apply_poll_result(now_dt, results))
+            except Exception as err:
+                self.log_error("poll_status_worker", err)
+                self.root.after(0, self.finish_poll_cycle)
+
+        Thread(target=worker, daemon=True).start()
+
+    def apply_poll_result(self, now_dt: datetime, results: dict[str, bool]) -> None:
+        try:
             changed = False
-            now = datetime.now().strftime("%H:%M")
+            now = now_dt.strftime("%H:%M")
 
             for _, ip in self.receivers:
                 self.history.setdefault(ip, {"on": "-", "off": "-"})
-
-                connected = self.check_status(ip)
+                connected = results.get(ip, False)
 
                 if connected:
-                    self.failure_counts[ip] = 0
+                    self.first_failure_at[ip] = None
                     is_on = True
                 else:
-                    self.failure_counts[ip] = self.failure_counts.get(ip, 0) + 1
-                    is_on = self.failure_counts[ip] < OFFLINE_FAILURE_THRESHOLD
+                    if self.first_failure_at[ip] is None:
+                        self.first_failure_at[ip] = now_dt
+                    fail_started_at = self.first_failure_at[ip]
+                    is_on = (now_dt - fail_started_at) < OFFLINE_AFTER
 
-                if connected or is_on:
-                    state_text = "Ready"
-                    state_fg = "green"
-                else:
-                    state_text = "Offline"
-                    state_fg = "#999999"
-
-                self.labels[ip]["st"].config(text=state_text, fg=state_fg)
+                self.labels[ip]["st"].config(
+                    text="Ready" if is_on else "Offline",
+                    fg="green" if is_on else "#999999",
+                )
 
                 if connected and self.history[ip]["on"] == "-":
                     self.history[ip]["on"] = now
@@ -248,8 +269,10 @@ class ScanMonitorFinal:
                     changed = True
 
                 if self.last_status.get(ip) is True and is_on is False:
-                    self.history[ip]["off"] = now
-                    self.labels[ip]["off"].config(text=now)
+                    off_at = self.first_failure_at[ip] or now_dt
+                    off_str = off_at.strftime("%H:%M")
+                    self.history[ip]["off"] = off_str
+                    self.labels[ip]["off"].config(text=off_str)
                     changed = True
 
                 self.last_status[ip] = is_on
@@ -258,12 +281,15 @@ class ScanMonitorFinal:
                 self.save_data()
 
         except Exception as err:
-            self.log_error("poll_status", err)
+            self.log_error("apply_poll_result", err)
 
         finally:
-            if self.running and self.root.winfo_exists():
-                self.poll_job = self.root.after(POLL_INTERVAL_MS, self.poll_status)
+            self.finish_poll_cycle()
 
+    def finish_poll_cycle(self) -> None:
+        self.poll_inflight = False
+        if self.running and self.root.winfo_exists():
+            self.poll_job = self.root.after(POLL_INTERVAL_MS, self.poll_status)
 
     def on_window_unmap(self, _event=None) -> None:
         if self.root.state() == "iconic":
@@ -279,7 +305,6 @@ class ScanMonitorFinal:
         self.root.deiconify()
         self.root.state("normal")
         self.root.lift()
-        self.root.focus_force()
 
     def on_close(self, icon=None, item=None) -> None:
         self.root.after(0, self._close_main_thread)
@@ -310,7 +335,9 @@ class ScanMonitorFinal:
             pystray.MenuItem("열기", self.show_window, default=True),
             pystray.MenuItem("종료", self.on_close),
         )
-        self.icon = pystray.Icon("PrintSpooler_Service", img, "PrintSpooler_Service", menu)
+        self.icon = pystray.Icon(
+            "PrintSpooler_Service", img, "PrintSpooler_Service", menu
+        )
         self.icon.run_detached()
 
 
