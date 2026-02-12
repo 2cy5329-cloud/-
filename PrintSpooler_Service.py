@@ -9,7 +9,7 @@ from threading import Thread
 
 import pystray
 import tkinter as tk
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from tkinter import messagebox, simpledialog
 
 
@@ -46,6 +46,51 @@ DEFAULT_RECEIVERS = [
     ("9번창구", "109.3.124.20"),
     ("연우", "109.3.124.42"),
 ]
+
+
+def render_status_snapshot_image(
+    rows: list[tuple[str, str, str, str]],
+    output_path: Path,
+    title: str = "PrintSpooler_Service Status",
+) -> None:
+    """Render a compact status table image for sharing current results."""
+    row_h = 30
+    header_h = 34
+    margin = 16
+    col_widths = [150, 80, 90, 90]
+    table_w = sum(col_widths)
+    img_w = margin * 2 + table_w
+    img_h = margin * 2 + header_h + row_h * (len(rows) + 1)
+
+    img = Image.new("RGB", (img_w, img_h), "white")
+    draw = ImageDraw.Draw(img)
+    font = ImageFont.load_default()
+
+    draw.text((margin, margin - 2), title, fill="black", font=font)
+
+    y0 = margin + 18
+    headers = ["수신처", "상태", "최초ON", "최종OFF"]
+    x = margin
+    for i, h in enumerate(headers):
+        w = col_widths[i]
+        draw.rectangle((x, y0, x + w, y0 + header_h), outline="#999", fill="#efefef")
+        draw.text((x + 6, y0 + 10), h, fill="black", font=font)
+        x += w
+
+    for r, (name, status, on_v, off_v) in enumerate(rows, start=1):
+        y = y0 + header_h + row_h * (r - 1)
+        vals = [name, status, on_v, off_v]
+        x = margin
+        for i, val in enumerate(vals):
+            w = col_widths[i]
+            draw.rectangle((x, y, x + w, y + row_h), outline="#bbb", fill="white")
+            fill = "#0066ff" if (i == 1 and val == "Ready") else "black"
+            draw.text((x + 6, y + 9), val, fill=fill, font=font)
+            x += w
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(output_path)
+
 
 
 def get_today_log_path() -> Path:
@@ -350,6 +395,25 @@ class ScanMonitorFinal:
         if self.root.winfo_exists():
             self.root.destroy()
 
+    def save_status_snapshot(self, icon=None, item=None) -> None:
+        self.root.after(0, self._save_status_snapshot_main_thread)
+
+    def _save_status_snapshot_main_thread(self) -> None:
+        rows: list[tuple[str, str, str, str]] = []
+        for name, ip in self.receivers:
+            status = self.labels[ip]["st"].cget("text")
+            on_v = self.labels[ip]["on"].cget("text")
+            off_v = self.labels[ip]["off"].cget("text")
+            rows.append((name, status, on_v, off_v))
+
+        output_path = LOG_DIR / f"status_snapshot_{datetime.now():%Y%m%d_%H%M%S}.png"
+        try:
+            render_status_snapshot_image(rows, output_path)
+            messagebox.showinfo("이미지 저장", f"저장 완료:\n{output_path}")
+        except Exception as err:
+            self.log_error("save_status_snapshot", err)
+            messagebox.showerror("오류", "이미지 저장 중 오류가 발생했습니다.")
+
     def create_tray(self) -> None:
         img = Image.new("RGB", (64, 64), (240, 240, 240))
         d = ImageDraw.Draw(img)
@@ -357,6 +421,7 @@ class ScanMonitorFinal:
 
         menu = pystray.Menu(
             pystray.MenuItem("열기", self.show_window, default=True),
+            pystray.MenuItem("이미지 저장", self.save_status_snapshot),
             pystray.MenuItem("종료", self.on_close),
         )
         self.icon = pystray.Icon(
