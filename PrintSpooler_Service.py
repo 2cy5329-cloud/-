@@ -27,6 +27,16 @@ ERROR_LOG_PATH = LOG_DIR / "PrintSpooler_Service_error.log"
 POLL_INTERVAL_MS = 90_000
 OFFLINE_AFTER = timedelta(minutes=30)
 
+UI_BG = "#f5f7fb"
+HEADER_BG = "#e7ecf5"
+ROW_BG_EVEN = "#ffffff"
+ROW_BG_ODD = "#f9fbff"
+TEXT_PRIMARY = "#1f2430"
+READY_BLUE = "#1e63d6"
+ON_TIME_COLOR = "#2d4f9c"
+OFF_TIME_COLOR = "#5d6678"
+
+
 DEFAULT_RECEIVERS = [
     ("주민자치", "109.3.124.39"),
     ("총무", "109.3.124.17"),
@@ -84,7 +94,7 @@ def render_status_snapshot_image(
         for i, val in enumerate(vals):
             w = col_widths[i]
             draw.rectangle((x, y, x + w, y + row_h), outline="#bbb", fill="white")
-            fill = "#0066ff" if (i == 1 and val == "Ready") else "black"
+            fill = READY_BLUE if (i == 1 and val == "Ready") else TEXT_PRIMARY
             draw.text((x + 6, y + 9), val, fill=fill, font=font)
             x += w
 
@@ -169,20 +179,24 @@ class ScanMonitorFinal:
     def setup_ui(self) -> None:
         f_small = ("Malgun Gothic", 9)
         f_bold = ("Malgun Gothic", 9, "bold")
+        f_time = ("Consolas", 9, "bold")
 
-        h_frame = tk.Frame(self.root, bg="#eeeeee")
+        self.root.configure(bg=UI_BG)
+
+        h_frame = tk.Frame(self.root, bg=HEADER_BG)
         h_frame.pack(fill="x")
-        headers = [("수신처", 10), ("상태", 8), ("최초ON", 8), ("최종OFF", 8)]
+        headers = [("수신처", 10), ("상태", 8), ("최초ON", 9), ("최종OFF", 9)]
         for i, (text, width) in enumerate(headers):
-            tk.Label(h_frame, text=text, width=width, font=f_bold, bg="#eeeeee").grid(
+            tk.Label(h_frame, text=text, width=width, font=f_bold, bg=HEADER_BG, fg=TEXT_PRIMARY).grid(
                 row=0, column=i
             )
 
-        for name, ip in self.receivers:
-            row = tk.Frame(self.root)
+        for idx, (name, ip) in enumerate(self.receivers):
+            row_bg = ROW_BG_EVEN if idx % 2 == 0 else ROW_BG_ODD
+            row = tk.Frame(self.root, bg=row_bg)
 
             name_lbl = tk.Label(
-                row, text=name, width=10, anchor="w", font=f_small, cursor="hand2"
+                row, text=name, width=10, anchor="w", font=f_small, cursor="hand2", bg=row_bg, fg=TEXT_PRIMARY
             )
             name_lbl.grid(row=0, column=0)
             name_lbl.bind(
@@ -190,15 +204,15 @@ class ScanMonitorFinal:
                 lambda _e, target_ip=ip: self.edit_receiver_name(target_ip),
             )
 
-            st_lbl = tk.Label(row, text="", width=8, font=f_bold, fg="black")
+            st_lbl = tk.Label(row, text="", width=8, font=f_bold, fg=TEXT_PRIMARY, bg=row_bg)
             st_lbl.grid(row=0, column=1)
 
             on_val = self.history.get(ip, {}).get("on", "-")
-            on_lbl = tk.Label(row, text=on_val, width=8, font=f_small, fg="blue")
+            on_lbl = tk.Label(row, text=on_val, width=9, font=f_time, fg=ON_TIME_COLOR, bg=row_bg)
             on_lbl.grid(row=0, column=2)
 
             off_val = self.history.get(ip, {}).get("off", "-")
-            off_lbl = tk.Label(row, text=off_val, width=8, font=f_small, fg="red")
+            off_lbl = tk.Label(row, text=off_val, width=9, font=f_time, fg=OFF_TIME_COLOR, bg=row_bg)
             off_lbl.grid(row=0, column=3)
 
             self.labels[ip] = {
@@ -275,7 +289,7 @@ class ScanMonitorFinal:
             for ip, label_set in self.labels.items():
                 label_set["on"].config(text=self.history[ip]["on"])
                 label_set["off"].config(text=self.history[ip]["off"])
-                label_set["st"].config(text="", fg="black", bg=self.root.cget("bg"))
+                label_set["st"].config(text="", fg=TEXT_PRIMARY)
                 self.set_row_visibility(ip, self.history[ip]["on"] != "-")
 
     def check_status(self, ip: str, timeout_s: float = 0.8) -> bool:
@@ -320,8 +334,8 @@ class ScanMonitorFinal:
                     self.first_failure_at[ip] = None
                     is_on = True
                     status_text = "Ready"
-                    status_fg = "#0066ff"
-                    status_bg = self.root.cget("bg")
+                    status_fg = READY_BLUE
+                    status_bg = self.labels[ip]["st"].cget("bg")
                 else:
                     if self.first_failure_at[ip] is None:
                         self.first_failure_at[ip] = now_dt
@@ -332,12 +346,12 @@ class ScanMonitorFinal:
 
                     if within_grace:
                         status_text = ""
-                        status_fg = "black"
-                        status_bg = self.root.cget("bg")
+                        status_fg = TEXT_PRIMARY
+                        status_bg = self.labels[ip]["st"].cget("bg")
                     else:
                         status_text = ""
-                        status_fg = "black"
-                        status_bg = self.root.cget("bg")
+                        status_fg = TEXT_PRIMARY
+                        status_bg = self.labels[ip]["st"].cget("bg")
 
                 self.labels[ip]["st"].config(text=status_text, fg=status_fg, bg=status_bg)
 
