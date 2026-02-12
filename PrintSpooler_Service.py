@@ -144,7 +144,7 @@ class ScanMonitorFinal:
                 lambda _e, target_ip=ip: self.edit_receiver_name(target_ip),
             )
 
-            st_lbl = tk.Label(row, text="-", width=8, font=f_small)
+            st_lbl = tk.Label(row, text="-", width=8, font=f_bold, fg="white", bg="#666666")
             st_lbl.grid(row=0, column=1)
 
             on_val = self.history.get(ip, {}).get("on", "-")
@@ -212,7 +212,7 @@ class ScanMonitorFinal:
             for ip, label_set in self.labels.items():
                 label_set["on"].config(text=self.history[ip]["on"])
                 label_set["off"].config(text=self.history[ip]["off"])
-                label_set["st"].config(text="-", fg="#999999")
+                label_set["st"].config(text="-", fg="white", bg="#666666")
 
     def check_status(self, ip: str, timeout_s: float = 0.8) -> bool:
         try:
@@ -255,8 +255,9 @@ class ScanMonitorFinal:
                 if connected:
                     self.first_failure_at[ip] = None
                     is_on = True
-                    status_text = "Ready"
-                    status_fg = "#007a00"
+                    status_text = "● READY"
+                    status_fg = "white"
+                    status_bg = "#0b8f08"
                 else:
                     if self.first_failure_at[ip] is None:
                         self.first_failure_at[ip] = now_dt
@@ -266,13 +267,15 @@ class ScanMonitorFinal:
                     is_on = within_grace
 
                     if within_grace:
-                        status_text = "Failing"
-                        status_fg = "#d60000"
+                        status_text = "▲ FAIL"
+                        status_fg = "white"
+                        status_bg = "#d60000"
                     else:
-                        status_text = "Offline"
-                        status_fg = "#999999"
+                        status_text = "■ OFF"
+                        status_fg = "white"
+                        status_bg = "#666666"
 
-                self.labels[ip]["st"].config(text=status_text, fg=status_fg)
+                self.labels[ip]["st"].config(text=status_text, fg=status_fg, bg=status_bg)
 
                 if connected and self.history[ip]["on"] == "-":
                     self.history[ip]["on"] = now
