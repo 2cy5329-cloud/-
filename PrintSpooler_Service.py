@@ -255,16 +255,24 @@ class ScanMonitorFinal:
                 if connected:
                     self.first_failure_at[ip] = None
                     is_on = True
+                    status_text = "Ready"
+                    status_fg = "green"
                 else:
                     if self.first_failure_at[ip] is None:
                         self.first_failure_at[ip] = now_dt
-                    fail_started_at = self.first_failure_at[ip]
-                    is_on = (now_dt - fail_started_at) < OFFLINE_AFTER
 
-                self.labels[ip]["st"].config(
-                    text="Ready" if is_on else "Offline",
-                    fg="green" if is_on else "#999999",
-                )
+                    fail_started_at = self.first_failure_at[ip]
+                    within_grace = (now_dt - fail_started_at) < OFFLINE_AFTER
+                    is_on = within_grace
+
+                    if within_grace:
+                        status_text = "Failing"
+                        status_fg = "#d9831f"
+                    else:
+                        status_text = "Offline"
+                        status_fg = "#999999"
+
+                self.labels[ip]["st"].config(text=status_text, fg=status_fg)
 
                 if connected and self.history[ip]["on"] == "-":
                     self.history[ip]["on"] = now
