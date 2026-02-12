@@ -144,7 +144,7 @@ class ScanMonitorFinal:
                 lambda _e, target_ip=ip: self.edit_receiver_name(target_ip),
             )
 
-            st_lbl = tk.Label(row, text="-", width=8, font=f_bold, fg="white", bg="#666666")
+            st_lbl = tk.Label(row, text="", width=8, font=f_bold, fg="black")
             st_lbl.grid(row=0, column=1)
 
             on_val = self.history.get(ip, {}).get("on", "-")
@@ -212,7 +212,7 @@ class ScanMonitorFinal:
             for ip, label_set in self.labels.items():
                 label_set["on"].config(text=self.history[ip]["on"])
                 label_set["off"].config(text=self.history[ip]["off"])
-                label_set["st"].config(text="-", fg="white", bg="#666666")
+                label_set["st"].config(text="", fg="black", bg=self.root.cget("bg"))
 
     def check_status(self, ip: str, timeout_s: float = 0.8) -> bool:
         try:
@@ -255,9 +255,9 @@ class ScanMonitorFinal:
                 if connected:
                     self.first_failure_at[ip] = None
                     is_on = True
-                    status_text = "● READY"
-                    status_fg = "white"
-                    status_bg = "#0b8f08"
+                    status_text = "Ready"
+                    status_fg = "#0066ff"
+                    status_bg = self.root.cget("bg")
                 else:
                     if self.first_failure_at[ip] is None:
                         self.first_failure_at[ip] = now_dt
@@ -267,13 +267,13 @@ class ScanMonitorFinal:
                     is_on = within_grace
 
                     if within_grace:
-                        status_text = "▲ FAIL"
-                        status_fg = "white"
-                        status_bg = "#d60000"
+                        status_text = ""
+                        status_fg = "black"
+                        status_bg = self.root.cget("bg")
                     else:
-                        status_text = "■ OFF"
-                        status_fg = "white"
-                        status_bg = "#666666"
+                        status_text = ""
+                        status_fg = "black"
+                        status_bg = self.root.cget("bg")
 
                 self.labels[ip]["st"].config(text=status_text, fg=status_fg, bg=status_bg)
 
